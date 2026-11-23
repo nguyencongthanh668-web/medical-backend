@@ -2,31 +2,53 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createDatabaseStub, startTestApp } = require('./helpers');
 
-test('Server, CORS và đăng nhập/đăng xuất giữ phản hồi cũ', async t => {
-    const request = await startTestApp(t);
-    const health = await request('/');
+test('Server, CORS, đăng nhập bằng bảng users và đăng xuất', async t => {
+    const { hashPassword } = require('../src/utils/password');
+    const { verify } = require('../src/utils/jwt');
+    const config = require('../src/config/env');
+    const user = { id: 21, name: 'Nguyễn An', email: 'an@benhvien.vn', department_id: 3, role: 'department',
+        is_disabled: 0, password_hash: hashPassword('matkhau1'), phone: '0901', gender: 1 };
+    const db = createDatabaseStub([
+        { sql: /^SELECT \* FROM users WHERE email = \? LIMIT 1$/, params: ['an@benhvien.vn'], result: [user] },
+        { params: ['an@benhvien.vn'], result: [user] },
+        { params: ['khong@co.vn'], result: [] }
+    ]);
+    const request = await startTestApp(t, db);
+    const health = await request('/', { as: null });
     assert.equal(health.status, 200);
     assert.deepEqual(health.body, { message: 'Máy chủ đang hoạt động!' });
     assert.equal(health.headers.get('access-control-allow-origin'), '*');
 
-    const login = await request('/api/login', {
-        method: 'POST', body: { email: 'admin@gmail.com', password: '123456' }
-    });
+    const login = await request('/api/login', { method: 'POST', as: null, body: { email: 'an@benhvien.vn', password: 'matkhau1' } });
     assert.equal(login.status, 200);
-    assert.deepEqual(login.body, {
-        status_code: 200, access_token: 'chuoi_token_bi_mat_cua_admin_123456', token_type: 'Bearer',
-        data: {
-            id: 1, displayName: 'Quản trị viên Hệ thống', email: 'admin@gmail.com',
-            phone: '0987654321', birthday: '1990-01-01', gender: '1',
-            profilePhotoUrl: 'https://cdn-icons-png.flaticon.com/512/149/149071.png'
-        }
-    });
-    const rejected = await request('/api/login', { method: 'POST', body: { email: 'unknown', password: 'wrong' } });
-    assert.equal(rejected.status, 401);
-    assert.deepEqual(rejected.body, { message: 'Sai tài khoản hoặc mật khẩu' });
+    assert.equal(login.body.token_type, 'Bearer');
+    assert.equal(login.body.data.role, 'department');
+    assert.equal(login.body.data.department_id, 3);
+    assert.equal(login.body.data.password_hash, undefined);
+    const payload = verify(login.body.access_token, config.jwt.secret);
+    assert.equal(payload.sub, 21);
+    assert.equal(payload.role, 'department');
+
+    const wrong = await request('/api/login', { method: 'POST', as: null, body: { email: 'an@benhvien.vn', password: 'sai' } });
+    assert.equal(wrong.status, 401);
+    const unknown = await request('/api/login', { method: 'POST', as: null, body: { email: 'khong@co.vn', password: 'x' } });
+    assert.deepEqual(unknown.body, { message: 'Sai tài khoản hoặc mật khẩu' });
+    const missing = await request('/api/login', { method: 'POST', as: null, body: {} });
+    assert.equal(missing.status, 400);
+
     const logout = await request('/api/v1/logout', { method: 'POST' });
     assert.deepEqual(logout.body, { status_code: 200, message: 'Đăng xuất thành công' });
     assert.equal((await request('/does-not-exist')).status, 404);
+});
+
+test('TC-07: API yêu cầu token hợp lệ; token sai hoặc thiếu trả 401', async t => {
+    const request = await startTestApp(t);
+    for (const path of ['/api/v1/equipments', '/api/v1/notification', '/api/v1/users']) {
+        const response = await request(path, { as: null });
+        assert.equal(response.status, 401);
+    }
+    const me = await request('/api/v1/me', { as: 'technician' });
+    assert.equal(me.body.data.role, 'technician');
 });
 
 test('Danh sách devices trả mảng trực tiếp', async t => {
@@ -53,7 +75,7 @@ test('Thông báo chuyển dữ liệu phẳng thành object data lồng nhau', 
 for (const department of ['', '?department_id=3']) {
     test(`Danh sách nhân viên ${department || 'không lọc'}`, async t => {
         const db = createDatabaseStub([{
-            sql: department ? /WHERE department_id = \?$/ : /^SELECT \* FROM users$/,
+            sql: department ? /FROM users WHERE department_id = \?$/ : /^SELECT \* FROM users$/,
             params: department ? ['3'] : [], result: [{ id: '8', name: 'Nguyễn An', department_id: '3' }, { id: '9' }]
         }]);
         const request = await startTestApp(t, db);
@@ -71,10 +93,11 @@ for (const department of ['', '?department_id=3']) {
 test('Chi tiết người dùng giữ dữ liệu và trả 404 khi không tìm thấy', async t => {
     const user = { id: 8, name: 'Nguyễn An', department_id: 3 };
     const db = createDatabaseStub([
-        { params: ['8'], result: [user] }, { params: ['999'], result: [] }
+        { params: ['8'], result: [{ ...user, password: 'x', password_hash: 'scrypt$a$b' }] }, { params: ['999'], result: [] }
     ]);
     const request = await startTestApp(t, db);
     assert.deepEqual((await request('/api/v1/users/8')).body, { status_code: 200, data: user });
+    // Trường mật khẩu không bao giờ được trả ra.
     const missing = await request('/api/v1/users/999');
     assert.equal(missing.status, 404);
     assert.deepEqual(missing.body, { status_code: 404, message: 'Không tìm thấy người dùng' });

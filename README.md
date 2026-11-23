@@ -1,130 +1,99 @@
 # Medical Backend
 
-Hệ thống Backend quản lý trang thiết bị y tế được xây dựng trên nền tảng **Node.js, Express và MySQL**. Hệ thống cung cấp các API RESTful tương thích hoàn toàn với ứng dụng frontend (Flutter) để quản lý danh sách thiết bị, nhân viên, khoa/phòng, thông báo và quy trình bảo trì, báo hỏng.
+Backend quản lý trang thiết bị y tế dùng Node.js, Express và MySQL, được tách từ `index.js` của [repository gốc](https://github.com/nguyencongthanh668-web/medical-backend), commit `2bb323b195a9004e4816b8c5d0eb03e24ab1cdde`.
 
-## 1. Yêu cầu hệ thống
-- **Node.js:** Phiên bản 22 trở lên.
-- **npm:** Đi kèm với Node.js.
-- **Cơ sở dữ liệu:** MySQL đã có sẵn database của dự án (yêu cầu phải có các bảng: `devices`, `medical_equipments`, `users`, `departments`, và `notifications`). 
-*Lưu ý: Source code không tự động tạo bảng (schema) hay migration.*
+`index.js` là điểm khởi động; mã ứng dụng nằm trong `src/` theo kiến trúc phân tầng routes → controllers → repositories (Hình 3.2 của báo cáo). Bản hiện tại hiện thực đầy đủ FR-01 đến FR-06 và phân quyền NFR-06 của báo cáo; mục 4 ghi các thay đổi so với bản tách file trước.
 
-## 2. Hướng dẫn cài đặt và khởi chạy
+Repository gồm hai phần của đồ án "Hệ thống quản lý thiết bị y tế" (quy trình bảo trì QT.QLD.09.01):
 
-**Bước 1: Mở dự án**
-Giải nén mã nguồn, mở thư mục `medical-backend` bằng VS Code. Mở Terminal trong VS Code (chọn Terminal → New Terminal) đảm bảo đang ở cùng cấp độ với file `package.json`.
+| Vị trí | Nội dung |
+| --- | --- |
+| Thư mục gốc | Backend Node.js/Express + MySQL (tài liệu này) |
+| [`medical_flutter/`](medical_flutter) | Ứng dụng Flutter (Android, web) gọi API của backend, xem [README Flutter](medical_flutter/README.md) |
 
-**Bước 2: Cài đặt thư viện**
-Chạy lệnh sau để cài đặt chính xác các phiên bản thư viện:
-```bash
-npm ci
-```
+## 1. Cách chạy trên Windows (XAMPP)
 
-**Bước 3: Cấu hình biến môi trường (.env)**
-Tạo file `.env` từ file mẫu có sẵn. Nếu dùng PowerShell trên Windows, chạy lệnh:
-```bash
-Copy-Item .env.example .env
-```
-Mở file `.env` vừa tạo và điền thông tin kết nối MySQL của bạn:
-```env
-PORT=3000
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=root
-DB_PASSWORD=
-DB_NAME=medical_device_db
-DB_CONNECTION_LIMIT=10
-```
-*Lưu ý: Nếu mật khẩu của bạn có chứa khoảng trắng hoặc ký tự đặc biệt (như `#`), hãy đặt nó trong dấu ngoặc kép (ví dụ: `DB_PASSWORD="mat khau#vi du"`). Nếu không có file `.env`, server sẽ chạy với cấu hình mặc định.*
+Yêu cầu Node.js **22 trở lên**, npm và MySQL/MariaDB của XAMPP có database `medical_device_db`. Không cần cài thêm thư viện: JWT, băm mật khẩu và bộ lập lịch dùng sẵn `node:crypto`, `setTimeout` của Node.js.
 
-**Bước 4: Khởi động Server**
-- Khởi động môi trường thực tế:
-  ```bash
-  npm start
-  ```
-- Khởi động môi trường phát triển (tự động khởi động lại khi có thay đổi code):
-  ```bash
-  npm run dev
-  ```
-Để dừng server và đóng kết nối database, nhấn `Ctrl + C` trong Terminal.
+1. Bật **MySQL** trong XAMPP Control Panel (không cần Apache, server Node.js tự phục vụ API).
+2. Mở thư mục `medical-backend` trong VS Code, mở terminal tại thư mục chứa `package.json`, cài thư viện:
 
-**Bước 5: Kiểm tra**
-Mở trình duyệt truy cập `http://localhost:3000/` để kiểm tra server HTTP đã hoạt động chưa. Để kiểm tra kết nối dữ liệu thật, hãy gọi thử API `http://localhost:3000/api/v1/equipments`.
+   ```powershell
+   npm ci
+   ```
 
----
+3. Tạo `.env` từ file mẫu rồi điền thông tin MySQL (XAMPP mặc định: `root`, mật khẩu rỗng) và một chuỗi bí mật bất kỳ cho `JWT_SECRET`:
 
-## 3. Cấu trúc thư mục và Kiến trúc
+   ```powershell
+   Copy-Item .env.example .env
+   ```
 
-Dự án được tổ chức theo mô hình phân lớp rõ ràng (Routes -> Controllers -> Repositories) giúp dễ dàng bảo trì và mở rộng:
+4. **Cập nhật cấu trúc database** (chỉ cần chạy một lần, chạy lại cũng không sao):
 
-| Đường dẫn | Trách nhiệm |
-| :--- | :--- |
-| `index.js` | Điểm khởi chạy của ứng dụng, gọi hàm startServer(). |
-| `src/server.js` | Tạo pool MySQL, mở cổng HTTP, đóng tài nguyên an toàn khi dừng. |
-| `src/app.js` | Khởi tạo Express app, cấu hình CORS, JSON parser và gắn các Routes. |
-| `src/config/env.js` | Đọc file `.env`, thiết lập giá trị mặc định và kiểm tra cấu hình. |
-| `src/config/database.js`| Tạo pool kết nối MySQL. |
-| `src/routes/` | Khai báo các API (HTTP method, URL) và định tuyến tới Controller tương ứng. |
-| `src/controllers/`| Nhận Request, gọi Repository xử lý nghiệp vụ, định dạng và trả về Response. |
-| `src/repositories/`| Chứa các câu lệnh SQL và thao tác trực tiếp với Database. |
-| `src/formatters/` | Chuẩn hóa dữ liệu thô từ Database thành JSON đúng chuẩn cho Flutter. |
-| `src/data/demo-staff.js`| Dữ liệu nhân viên tĩnh dùng cho các lịch sử mẫu. |
-| `src/utils/date.js` | Các hàm tiện ích hỗ trợ định dạng ngày tháng. |
-| `tests/` | Bộ kiểm thử (Testing) cho HTTP và hợp đồng dữ liệu. |
-| `scripts/check-syntax.js`| Kiểm tra lỗi cú pháp JavaScript. |
+   ```powershell
+   npm run migrate
+   ```
 
----
+   Lệnh thêm cột `users.role`, `users.password_hash`, các cột ngày bảo dưỡng còn thiếu và tạo ba bảng `inspection_results`, `maintenance_records`, `maintenance_alerts`. Kiểu cột khóa ngoại được lấy đúng theo bảng gốc. File `database/001_workflow_tables.sql` là bản tham khảo cùng nội dung.
 
-## 4. Danh sách API
+5. **Tạo tài khoản demo** cho bốn vai trò (mật khẩu `123456`):
 
-*(Ghi chú: Ký hiệu `v{1,2}` nghĩa là API hỗ trợ cả `/api/v1/...` và `/api/v2/...`. Ký hiệu `{equipment,equipments}` hỗ trợ cả số ít và số nhiều).*
+   ```powershell
+   npm run accounts
+   ```
 
-| Phương thức | Endpoint | Chức năng |
-| :--- | :--- | :--- |
-| **GET** | `/` | Kiểm tra trạng thái server. |
-| **POST** | `/api/login` | Đăng nhập hệ thống (Mẫu). |
-| **POST** | `/api/v1/logout` | Đăng xuất. |
-| **GET** | `/api/devices` | Lấy danh mục thiết bị từ bảng devices. |
-| **GET** | `/api/v1/users` | Danh sách nhân viên (có thể lọc theo department_id). |
-| **GET** | `/api/v1/users/:id` | Xem chi tiết nhân viên. |
-| **GET** | `/api/v1/departments` | Lấy danh sách khoa/phòng. |
-| **GET** | `/api/v{1,2}/departments/:id` | Xem chi tiết khoa/phòng. |
-| **GET** | `/api/v1/notification` | Lấy danh sách thông báo. |
-| **GET** | `/api/v1/equipments` | Danh sách thiết bị (trả về mảng). Hỗ trợ lọc theo `status`. |
-| **GET** | `/api/v2/equipments` | Danh sách thiết bị có **phân trang**. Hỗ trợ `page`, `limit`, `status`. |
-| **GET** | `/api/v1/equipment` | Alias số ít của danh sách thiết bị. |
-| **GET** | `/api/v{1,2}/{equipment,equipments}/:id` | Xem chi tiết 1 thiết bị. |
-| **GET** | `/api/v{1,2}/equipments/:id/inspections`| Lấy lịch sử kiểm định (Dữ liệu mẫu). |
-| **GET** | `/api/v{1,2}/equipments/:id/maintenances`| Lấy lịch sử bảo trì (Dữ liệu mẫu). |
-| **POST/PUT**| `/api/v{1,2}/{equipment,equipments}/:id` | Báo hỏng thiết bị. |
-| **POST** | `/api/v{1,2}/{equipment,equipments}/:id/repair` | Báo hỏng thiết bị. |
-| **POST** | `/api/v{1,2}/{equipment,equipments}/:id/failure`| Báo hỏng thiết bị. |
-| **POST** | `/api/v{1,2}/equipments/repair` | Báo hỏng (Lấy ID thiết bị từ body request). |
-| **POST** | `/api/v{1,2}/repairs` | Báo hỏng (Lấy ID thiết bị từ body request). |
-| **GET** | `/api/v1/auto-seed` | **[NGUY HIỂM]** Xóa sạch DB và tạo 455 thiết bị mẫu. |
+   | Email | Vai trò | Được làm |
+   | --- | --- | --- |
+   | `khoa@demo.vn` | U1 Khoa/Phòng (`department`) | Xem thiết bị của khoa mình, báo hỏng |
+   | `ktv@demo.vn` | U2 Kỹ thuật viên (`technician`) | Ghi kết quả kiểm tra sơ bộ |
+   | `vattu@demo.vn` | U3 Phòng Vật tư (`manager`) | Thêm hồ sơ, cảnh báo bảo dưỡng, nghiệm thu |
+   | `admin@gmail.com` | U4 Quản trị (`admin`) | Tạo tài khoản, đổi vai trò |
 
-**Chi tiết về Phân trang:** 
-Khi dùng `v2` và truyền tham số `?page=1`, mảng dữ liệu sẽ nằm gọn trong cấu trúc `data.data` kèm theo metadata phân trang.
+6. Khởi động server: `npm start` (hoặc `npm run dev` khi lập trình). Server chạy bộ quét hạn bảo dưỡng ngay khi khởi động và mỗi ngày lúc `ALERT_SCAN_HOUR` giờ.
+7. (Tùy chọn) Chạy ứng dụng web cùng địa chỉ với API: trong thư mục `medical_flutter` chạy `flutter build web`, chép toàn bộ `build/web` vào `medical-backend/public/`, rồi khởi động lại server. Mở `http://localhost:3000/`, ở màn hình liên kết giữ nguyên `http://localhost:3000/` và đăng nhập bằng tài khoản ở bước 5. Khi chưa có `public/`, đường dẫn `/` trả về JSON kiểm tra sức khỏe (luôn có ở `/api/health`).
 
----
+Kiểm tra: `npm run check` (cú pháp) và `npm test` (65 ca kiểm thử với database giả, không đụng dữ liệu thật).
 
-## 5. Kiểm thử (Testing)
+## 2. Kiến trúc mã nguồn
 
-Hệ thống được trang bị bộ kiểm thử độc lập, không làm ảnh hưởng đến cơ sở dữ liệu thật của bạn. Bao gồm 60 test case kiểm tra cấu trúc API, xử lý lỗi, phân trang và định dạng dữ liệu.
+| Thư mục | Trách nhiệm |
+| --- | --- |
+| `src/routes/` | Khai báo URL, gắn middleware phân quyền theo vai trò. |
+| `src/middleware/auth.js` | Xác thực token JWT (`authenticate`) và kiểm tra vai trò (`requireRole`). |
+| `src/controllers/` | Kiểm tra dữ liệu vào, điều phối nghiệp vụ, trả JSON. |
+| `src/services/` | Logic dùng chung: kiểm tra quyền theo khoa, bộ quét hạn bảo dưỡng. |
+| `src/repositories/` | Câu lệnh SQL cho từng bảng; nhận `db` hoặc connection của giao dịch. |
+| `src/jobs/scheduler.js` | Chạy bộ quét hằng ngày, không cần thư viện cron. |
+| `src/utils/` | JWT, băm mật khẩu (scrypt), giao dịch MySQL, kiểm tra dữ liệu, định dạng ngày. |
+| `scripts/` | `migrate.js`, `create-accounts.js`, kiểm tra cú pháp. |
+| `tests/` | Kiểm thử HTTP với database giả lập (có giả lập giao dịch). |
 
-- Chạy kiểm tra lỗi cú pháp code: 
-  ```bash
-  npm run check
-  ```
-- Chạy toàn bộ Test: 
-  ```bash
-  npm test
-  ```
+Mọi API trừ `POST /api/login` đều yêu cầu header `Authorization: Bearer <token>`. Lỗi trả JSON `{status_code, message}` với mã 400 (dữ liệu sai), 401 (chưa đăng nhập/hết phiên), 403 (sai quyền), 404 (không tìm thấy), 409 (xung đột trạng thái, trùng mã).
 
----
+## 3. API theo yêu cầu chức năng
 
-## 6. Các lưu ý quan trọng về Dữ liệu nghiệp vụ
+| Yêu cầu | Method, đường dẫn | Vai trò | Ghi chú |
+| --- | --- | --- | --- |
+| NFR-06 | `POST /api/login`, `POST /api/v1/logout`, `GET /api/v1/me` | Tất cả | Đăng nhập trả JWT có `role`, `department_id` |
+| FR-01 | `GET /api/v1/equipments`, `GET /api/v2/equipments?page&limit&status`, `GET /api/v1/equipments/:id` | Tất cả | U1 chỉ thấy thiết bị của khoa mình |
+| FR-01 | `POST /api/v1/equipments`, `PUT /api/v1/equipments/:id` | U3 | Chặn trùng mã (409); trả `qr_content` để in QR |
+| FR-02 | `POST /api/v1/equipments/:id/repair` | U1 | Body `symptom`, `critical_level`, `request_id`; ghi trong một giao dịch, gửi lại cùng `request_id` không tạo bản ghi trùng |
+| FR-03 | `POST`, `GET /api/v1/equipments/:id/inspection-results` | U2 (ghi) | `decision`: `self_fix`, `in_house`, `outsourced`; thiết bị chuyển `corrected` |
+| FR-04 | `GET /api/v1/maintenance-alerts?days=7|15|30`, `POST /api/v1/maintenance-alerts/scan` | U3 | Mỗi mốc 30/15/7 ngày chỉ cảnh báo một lần |
+| FR-05 | `GET /api/v1/equipments/:id/history` | Tất cả | Báo hỏng, kiểm tra, nghiệm thu, số lần hỏng, tổng chi phí |
+| FR-06 | `PUT /api/v1/equipments/:id/acceptance` | U3 | `type` `repair`/`maintenance`, `result` `pass`/`fail`, `cost`; bảo dưỡng đạt thì cập nhật `last_maintenance` và `next_maintenance` theo thứ tự ưu tiên: ngày U3 nhập (`next_maintenance`) → chu kỳ `regular_maintenance` (tháng) → `DEFAULT_MAINTENANCE_MONTHS` (mặc định 6) |
+| U4 | `POST /api/v1/users`, `PATCH /api/v1/users/:id` | U4 | Tạo tài khoản, đổi vai trò, khóa tài khoản, đặt lại mật khẩu |
+| Khác | `GET /api/devices`, `/api/v1/users`, `/api/v1/departments`, `/api/v1/notification` | Tất cả | Danh mục tham chiếu |
 
-- **Xác thực (Auth):** Chức năng đăng nhập hiện đang sử dụng tài khoản mẫu (`admin@gmail.com` / `123456`) và trả về token tĩnh. Hệ thống chưa áp dụng xác thực/phân quyền chặn các API.
-- **Lịch sử & Khoa phòng:** Các API lấy lịch sử kiểm định/bảo trì và chi tiết khoa phòng đang sử dụng hàm sinh dữ liệu mẫu (`demo-staff.js` và ngày ngẫu nhiên) để mô phỏng hiển thị trên UI.
-- **Báo hỏng:** Khi gọi API báo hỏng, hệ thống sẽ ngay lập tức cập nhật trạng thái thiết bị thành lỗi, thay đổi ngày giờ cập nhật và sinh ra một thông báo trong bảng `notifications`.
-- **Cảnh báo tính năng Auto-Seed:** Endpoint `/api/v1/auto-seed` thực thi lệnh `TRUNCATE TABLE medical_equipments`. Nó sẽ xóa toàn bộ dữ liệu thiết bị hiện có và bơm lại 455 thiết bị ảo. **Chỉ gọi API này trên môi trường thử nghiệm**, tuyệt đối không dùng trên database đang chứa dữ liệu thật.
+Đường dẫn cũ vẫn chạy: `/v2/...`, số ít `/equipment/...`, `/failure`, `/equipments/repair`, `/repairs` (báo hỏng); `/inspections`, `/maintenances` trả cùng dữ liệu với `/history`.
+
+`GET /api/v1/auto-seed` **xóa toàn bộ bảng thiết bị** để tạo dữ liệu mẫu; chỉ U4 gọi được và chỉ khi `.env` có `ALLOW_SEED=true`.
+
+## 4. Thay đổi so với bản tách file trước
+
+- Đăng nhập thật bằng bảng `users` (mật khẩu băm scrypt, JWT HS256 hết hạn sau `JWT_EXPIRES_HOURS`), thay cho tài khoản và token cố định.
+- Phân quyền theo bốn vai trò ở mọi API; U1 bị giới hạn theo khoa.
+- Báo hỏng chờ MySQL hoàn tất, ghi trạng thái và thông báo trong một giao dịch, lưu `reason`, `critical_level`, `date_failure`; trả 201 khi thành công.
+- Lịch sử thiết bị lấy từ dữ liệu thật thay cho danh sách nhân viên mẫu (`src/data/demo-staff.js` không còn được dùng).
+- Thêm kiểm tra sơ bộ, nghiệm thu, cảnh báo bảo dưỡng, tạo/sửa hồ sơ, quản lý tài khoản.
+- Chi tiết khoa/phòng (`/departments/:id`) vẫn là dữ liệu mẫu như bản gốc; Web Push chưa làm, thông báo hiện ở màn hình Thông báo của ứng dụng.

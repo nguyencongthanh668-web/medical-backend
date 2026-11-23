@@ -1,10 +1,14 @@
 const { Router } = require('express');
-const authController = require('../controllers/auth.controller');
+const createUserRepository = require('../repositories/user.repository');
+const createAuthController = require('../controllers/auth.controller');
+const { authenticate } = require('../middleware/auth');
 
-function createAuthRouter() {
+function createAuthRouter(db) {
     const router = Router();
-    router.post('/login', authController.login);
-    router.post('/v1/logout', authController.logout);
+    const controller = createAuthController(createUserRepository(db));
+    router.post('/login', controller.login);
+    router.post('/v1/logout', controller.logout);
+    router.get('/v1/me', authenticate, controller.me);
     return router;
 }
 

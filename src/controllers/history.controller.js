@@ -1,46 +1,56 @@
-const demoStaff = require('../data/demo-staff');
-const { toDateString } = require('../utils/date');
+const { parseId } = require('../utils/validate');
+const { assertDepartmentAccess, loadEquipment } = require('../services/access');
 
-function createHistoryItem({ id, equipmentId, time, lastInspection, nextInspection, status, staff }) {
-    return {
-        id, equipment_id: equipmentId,
-        title: 'Kiểm tra định kỳ', type: 'inspection',
-        time, date: time, created_at: time,
-        last_inspection: lastInspection, next_inspection: nextInspection,
-        status, person: staff.name, user_name: staff.name, user_id: staff.id,
-        user: {
-            id: staff.id, name: staff.name, code: staff.code,
-            display_name: `${staff.name} (${staff.code})`,
-            email: staff.email, phone: staff.phone
-        }
-    };
-}
+const DECISION_LABELS = { self_fix: 'Tự khắc phục', in_house: 'Sửa nội bộ', outsourced: 'Thuê ngoài' };
 
-// Lịch sử mẫu của bản gốc, dùng chung cho inspections và maintenances.
-// Chưa có bảng lịch sử thật trong repository này.
-function list(req, res) {
-    try {
-        const now = new Date();
-        const pastDate = new Date(now);
-        pastDate.setMonth(now.getMonth() - 2);
-        const futureDate = new Date(now);
-        futureDate.setMonth(now.getMonth() + 4);
+const iso = (v) => (v ? new Date(v).toISOString() : null);
 
-        const lastInspection = toDateString(pastDate);
-        const nextInspection = toDateString(futureDate);
-        const staff1 = demoStaff[Math.floor(Math.random() * demoStaff.length)];
-        const staff2 = demoStaff[Math.floor(Math.random() * demoStaff.length)];
-        const common = { equipmentId: Number(req.params.id), lastInspection, nextInspection };
+// Lịch sử thiết bị trên dòng thời gian (FR-05, UC-05): gom báo hỏng, kết quả kiểm tra và nghiệm thu.
+function createHistoryController({ equipmentRepository, notificationRepository, inspectionRepository, recordRepository }) {
+    async function list(req, res) {
+        const id = parseId(req.params.id);
+        const equipment = await loadEquipment(equipmentRepository, id);
+        assertDepartmentAccess(req.user, equipment);
 
-        const data = [
-            createHistoryItem({ ...common, id: 1, time: lastInspection, status: 1, staff: staff1 }),
-            createHistoryItem({ ...common, id: 2, time: nextInspection, status: 0, staff: staff2 })
-        ];
-        res.status(200).json({ status: '200', status_code: 200, message: 'Thành công', data });
-    } catch (err) {
-        console.error('Lỗi lấy lịch sử kiểm định:', err);
-        res.status(500).json({ status_code: 500, message: err.message });
+        const [faults, inspections, records] = await Promise.all([
+            notificationRepository.findFaultsByEquipment(id),
+            inspectionRepository.findByEquipment(id),
+            recordRepository.findByEquipment(id)
+        ]);
+
+        const events = [
+            ...faults.map(f => ({
+                kind: 'fault', id: f.id, time: iso(f.created_at), title: 'Báo hỏng',
+                detail: f.data_content || '', person: f.user_name || null
+            })),
+            ...inspections.map(i => ({
+                kind: 'inspection', id: i.id, time: iso(i.inspected_at), title: 'Kiểm tra sơ bộ',
+                detail: `${i.cause} – Hướng xử lý: ${DECISION_LABELS[i.decision] || i.decision}`,
+                person: i.user_name || null
+            })),
+            ...records.map(r => ({
+                kind: r.type === 'maintenance' ? 'maintenance' : 'repair', id: r.id, time: iso(r.completed_at),
+                title: r.type === 'maintenance' ? 'Bảo dưỡng' : 'Sửa chữa, nghiệm thu',
+                detail: `Nghiệm thu ${r.result === 'pass' ? 'đạt' : 'không đạt'}${r.performed_by ? ` – Thực hiện: ${r.performed_by}` : ''}`,
+                person: r.user_name || null, result: r.result, cost: Number(r.cost) || 0,
+                document_url: r.document_url || null
+            }))
+        ].sort((a, b) => String(b.time).localeCompare(String(a.time)));
+
+        const summary = {
+            failure_count: faults.length,
+            repair_count: records.filter(r => r.type === 'repair').length,
+            maintenance_count: records.filter(r => r.type === 'maintenance').length,
+            total_cost: records.reduce((sum, r) => sum + (Number(r.cost) || 0), 0)
+        };
+
+        res.status(200).json({
+            status_code: 200,
+            data: { equipment: { id, title: equipment.title, code: equipment.code, status: equipment.status }, summary, events }
+        });
     }
+
+    return { list };
 }
 
-module.exports = { list };
+module.exports = createHistoryController;

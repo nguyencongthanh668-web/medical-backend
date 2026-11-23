@@ -8,3 +8,14 @@ function toSqlDateTime(date) {
 }
 
 module.exports = { toDateString, toSqlDateTime };
+
+// Ngày theo giờ địa phương (YYYY-MM-DD); dùng cho cột DATE mà mysql2 trả về lúc 00:00 giờ máy.
+function toLocalDate(value) {
+    if (!value) return null;
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+module.exports.toLocalDate = toLocalDate;

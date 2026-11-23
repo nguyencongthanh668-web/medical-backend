@@ -97,21 +97,20 @@ for (const version of ['v1', 'v2']) {
             } });
         });
     }
-    for (const history of ['inspections', 'maintenances']) {
-        test(`Lịch sử mẫu ${version}/${history} vẫn khả dụng`, async t => {
-            const request = await startTestApp(t);
-            const { body } = await request(`/api/${version}/equipments/7/${history}`);
-            assert.equal(body.status_code, 200);
-            assert.equal(body.data.length, 2);
-            assert.equal(body.data[0].equipment_id, 7);
-            assert.equal(body.data[0].user_id, body.data[0].user.id);
-            assert.equal(body.data[0].type, 'inspection');
-            assert.equal(body.data[0].status, 1);
-            assert.equal(body.data[1].status, 0);
-            assert.match(body.data[0].date, /^\d{4}-\d{2}-\d{2}$/);
-        });
-    }
 }
+
+test('U1 chỉ thấy thiết bị của khoa mình (lọc department_id, chi tiết khoa khác trả 403)', async t => {
+    const db = createDatabaseStub([
+        { sql: /FROM medical_equipments WHERE department_id = \? ORDER BY/, params: [3], result: [fixture.row] },
+        { sql: /WHERE \(status = 'corrected' OR status = 'was_broken'\) AND department_id = \?/, params: [3], result: [] },
+        { sql: /WHERE id = \?/, result: [{ ...fixture.row, department_id: 9 }] }
+    ]);
+    const request = await startTestApp(t, db);
+    assert.equal((await request('/api/v1/equipments', { as: 'department' })).body.total, 1);
+    assert.equal((await request('/api/v1/equipments?status=was_broken', { as: 'department' })).body.total, 0);
+    const other = await request('/api/v1/equipments/7', { as: 'department' });
+    assert.equal(other.status, 403);
+});
 
 test('Chi tiết thiết bị không tồn tại trả 404', async t => {
     const request = await startTestApp(t, createDatabaseStub([{ result: [] }]));
@@ -120,12 +119,12 @@ test('Chi tiết thiết bị không tồn tại trả 404', async t => {
     assert.deepEqual(response.body, { status_code: 404, message: 'Không tìm thấy thiết bị' });
 });
 
-test('Ngày không hợp lệ được bắt trong callback, không làm sập server', async t => {
+test('Ngày không hợp lệ trả về null, không làm sập server', async t => {
     const db = createDatabaseStub([{ result: [{ id: 7, last_inspection: 'invalid-date' }] }]);
     const request = await startTestApp(t, db);
     const response = await request('/api/v1/equipments/7');
-    assert.equal(response.status, 500);
-    assert.equal(response.body.status_code, 500);
+    assert.equal(response.status, 200);
+    assert.equal(response.body.data.last_inspection, null);
     assert.equal((await request('/')).status, 200);
 });
 
